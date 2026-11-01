@@ -1,0 +1,12 @@
+# Data processing and analysis
+pandas
+numpy
+
+# Machine learning
+scikit-learn
+
+# Dashboard development
+streamlit
+
+# Interactive data visualisations
+plotly
