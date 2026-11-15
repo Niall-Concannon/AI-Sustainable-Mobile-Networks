@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(page_title="Mobile Network Energy Dashboard", layout="wide")
@@ -83,11 +85,31 @@ def kpis(items):
         col.metric(label, value)
 
 
+def show(fig, where=st):
+    where.plotly_chart(fig, width="stretch")
+
+
+def energy_load_chart(data, title):
+    """Energy and load on two axes. Needs columns Time, Energy and Load."""
+    fig = go.Figure()
+    fig.add_scatter(x=data["Time"], y=data["Energy"], name="Energy")
+    fig.add_scatter(x=data["Time"], y=data["Load"], name="Load", yaxis="y2", line=dict(dash="dot"))
+    fig.update_layout(title=title, height=420, yaxis_title="Energy", legend=dict(orientation="h", y=-0.2),
+                      yaxis2=dict(title="Load", overlaying="y", side="right"))
+    return fig
+
+
 # Pages
 def overview_page(df):
     st.title("Mobile Network Energy Overview")
     kpis({"Base stations": f"{df['BS'].nunique():,}", "Readings": f"{len(df):,}",
           "Avg energy / reading": f"{df['Energy'].mean():.1f}", "Avg load": f"{df['load'].mean():.2f}"})
+    network = df.groupby("Time").agg(Energy=("Energy", "sum"), Load=("load", "mean")).reset_index()
+    show(energy_load_chart(network, "Network total energy vs mean load"))
+
+    left, right = st.columns(2)
+    show(px.histogram(df, x="Energy", nbins=60, title="Distribution of energy per reading"), left)
+    show(px.histogram(df, x="load", nbins=50, title="Distribution of load"), right)
     with st.expander("Preview raw data"):
         st.dataframe(df[REQUIRED].head(200), width="stretch")
 
