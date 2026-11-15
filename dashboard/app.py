@@ -23,6 +23,7 @@ REQUIRED = ["Time", "BS", "Energy", "load", "ESMODE", "TXpower"]
 # for example {"energy_kwh": "Energy", "station": "BS"}
 COLUMN_MAP = {}
 TIME_FORMAT = "%Y%m%d %H%M%S"
+DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 # Data
@@ -114,9 +115,32 @@ def overview_page(df):
         st.dataframe(df[REQUIRED].head(200), width="stretch")
 
 
+def patterns_page(df):
+    st.title("Energy Patterns")
+    hourly = df.groupby("hour")["Energy"].agg(["mean", "std"]).reset_index()
+    fig = px.line(hourly, x="hour", y="mean", error_y="std", markers=True,
+                  title="Average energy by hour of day", labels={"mean": "Energy"})
+    show(fig.update_xaxes(dtick=1))
+
+    sample = df.sample(min(8000, len(df)), random_state=1)
+    left, right = st.columns(2)
+    show(px.scatter(sample, x="load", y="Energy", opacity=0.35, title="Energy vs load (sampled)"), left)
+    show(px.scatter(sample, x="TXpower", y="Energy", opacity=0.35, title="Energy vs TX power (sampled)"), right)
+
+    heat = df.pivot_table(index="dow", columns="hour", values="Energy")
+    heat.index = [DAYS[i] for i in heat.index]
+    show(px.imshow(heat, aspect="auto", title="Mean energy: weekday x hour",
+                   labels=dict(x="Hour", y="Day", color="Energy")))
+
+    corr = df[["Energy", "load", "ESMODE", "TXpower"]].corr()
+    show(px.imshow(corr, text_auto=".2f", zmin=-1, zmax=1, color_continuous_scale="RdBu_r",
+                   title="Correlation matrix"))
+
+
 # App
 PAGES = {
     "Overview": overview_page,
+    "Energy patterns": patterns_page,
 }
 
 
