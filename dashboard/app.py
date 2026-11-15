@@ -13,6 +13,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from sklearn.dummy import DummyRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 st.set_page_config(page_title="Mobile Network Energy Dashboard", layout="wide")
 
@@ -100,6 +103,48 @@ def energy_load_chart(data, title):
     return fig
 
 
+# Model
+FEATURES = ["load", "ESMODE", "TXpower", "BS_avg_energy", "hour_sin", "hour_cos", "dow_sin", "dow_cos"]
+
+
+def score(actual, predicted):
+    return {"MAE": mean_absolute_error(actual, predicted),
+            "RMSE": float(np.sqrt(mean_squared_error(actual, predicted))),
+            "R2": r2_score(actual, predicted)}
+
+
+@st.cache_data(show_spinner="Training prediction model...")
+def train_model(df):
+    """Train on the first 80% of the time range and test on the rest.
+
+    Each base station is encoded as its average energy in the training data, which works
+    for any number of stations.
+    """
+    split_time = np.sort(df["Time"].unique())[int(df["Time"].nunique() * 0.8)]
+    train, test = df[df["Time"] < split_time], df[df["Time"] >= split_time]
+
+    station_mean = train.groupby("BS")["Energy"].mean()
+    def encode(part):
+        return part.assign(BS_avg_energy=part["BS"].map(station_mean).fillna(train["Energy"].mean()))
+    train, test = encode(train), encode(test)
+
+    model = HistGradientBoostingRegressor(max_iter=100, learning_rate=0.1, max_leaf_nodes=31, random_state=42)
+    model.fit(train[FEATURES], train["Energy"])
+    test = test.assign(Predicted=model.predict(test[FEATURES]))
+    baseline = DummyRegressor(strategy="mean").fit(train[FEATURES], train["Energy"])
+
+    return {"test": test, "split_time": split_time, "n_train": len(train),
+            "model": score(test["Energy"], test["Predicted"]),
+            "baseline": score(test["Energy"], baseline.predict(test[FEATURES]))}
+
+
+def actual_vs_predicted(data, title):
+    fig = px.line(data, x="Time", y=["Energy", "Predicted"], title=title)
+    fig.update_traces(line_dash="dash", selector=dict(name="Predicted"))
+    fig.update_layout(height=380, legend=dict(orientation="h", y=-0.2, title=""))
+    return fig
+
+
 # Pages
 def overview_page(df):
     st.title("Mobile Network Energy Overview")
@@ -137,10 +182,24 @@ def patterns_page(df):
                    title="Correlation matrix"))
 
 
+def predictions_page(df):
+    st.title("Energy Consumption Predictions")
+    res = train_model(df)
+    test, model, baseline = res["test"], res["model"], res["baseline"]
+    st.caption(f"Gradient Boosting trained on {res['n_train']:,} readings, tested on {len(test):,} readings "
+               f"from {pd.Timestamp(res['split_time']):%d %b %H:%M} onward (split by time).")
+
+    for col, name in zip(st.columns(3), ["MAE", "RMSE", "R2"]):
+        col.metric(name, f"{model[name]:.3f}", f"{model[name] - baseline[name]:+.2f} vs baseline",
+                   delta_color="normal" if name == "R2" else "inverse")
+
+    network = test.groupby("Time")[["Energy", "Predicted"]].sum().reset_index()
+    show(actual_vs_predicted(network, "Network total energy: actual vs predicted (test period)"))
 # App
 PAGES = {
     "Overview": overview_page,
     "Energy patterns": patterns_page,
+    "Predictions": predictions_page,
 }
 
 
