@@ -209,11 +209,49 @@ def predictions_page(df):
     show(px.histogram(errors, nbins=60, title="Prediction error distribution").update_layout(showlegend=False), right)
 
 
+def saving_page(df):
+    st.title("Energy-Saving Opportunities")
+    st.caption("Prototype heuristic: low-load readings where no energy-saving mode was active are candidates "
+               "for sleep/power-down. The saving percentage is an assumption you can adjust, not a measured value.")
+
+    left, right = st.columns(2)
+    percentile = left.slider("Low-load threshold (load percentile)", 5, 50, 25)
+    saving_pct = right.slider("Assumed saving on candidate readings (%)", 5, 50, 20)
+
+    threshold = df["load"].quantile(percentile / 100)
+    low = df["load"] <= threshold
+    candidates = df[low & (df["ESMODE"] <= 0)]
+    estimated = candidates["Energy"].sum() * saving_pct / 100
+
+    kpis({"Load threshold": f"{threshold:.3f}", "Low-load readings": f"{low.mean():.1%}",
+          "Candidates (no ES mode)": f"{len(candidates):,}",
+          "Est. saving": f"{estimated:,.0f} ({estimated / df['Energy'].sum():.1%})"})
+
+    by_hour = candidates.groupby("hour").size().reindex(range(24), fill_value=0)
+    left, right = st.columns(2)
+    show(px.bar(x=by_hour.index, y=by_hour.values, title="Candidate readings by hour",
+                labels={"x": "Hour", "y": "Candidates"}), left)
+    show(px.bar(x=["Low load", "Other"], y=[df[low]["Energy"].mean(), df[~low]["Energy"].mean()],
+                title="Mean energy: low load vs other", labels={"x": "", "y": "Energy"}), right)
+    st.info("If energy barely falls when load is low, that gap is the opportunity.")
+
+    top = (candidates.groupby("BS")
+           .agg(Candidate_hours=("Energy", "size"), Avg_energy=("Energy", "mean"),
+                Avg_load=("load", "mean"), Candidate_energy=("Energy", "sum"))
+           .assign(Est_saving=lambda t: t["Candidate_energy"] * saving_pct / 100)
+           .sort_values("Est_saving", ascending=False).head(20).round(2))
+    st.subheader("Top 20 base stations by estimated saving")
+    st.dataframe(top, width="stretch")
+    st.download_button("Download full candidate list (CSV)", candidates[REQUIRED].to_csv(index=False),
+                       "saving_candidates.csv", "text/csv")
+
+
 # App
 PAGES = {
     "Overview": overview_page,
     "Energy patterns": patterns_page,
     "Predictions": predictions_page,
+    "Saving opportunities": saving_page,
 }
 
 
