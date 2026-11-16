@@ -195,6 +195,20 @@ def predictions_page(df):
 
     network = test.groupby("Time")[["Energy", "Predicted"]].sum().reset_index()
     show(actual_vs_predicted(network, "Network total energy: actual vs predicted (test period)"))
+    station = st.selectbox("Base station", sorted_stations(test["BS"]))
+    show(actual_vs_predicted(test[test["BS"] == station], f"{station}: actual vs predicted"))
+
+    sample = test.sample(min(4000, len(test)), random_state=1)
+    lo, hi = sample[["Energy", "Predicted"]].min().min(), sample[["Energy", "Predicted"]].max().max()
+    scatter = px.scatter(sample, x="Energy", y="Predicted", opacity=0.4, title="Predicted vs actual (sampled)")
+    scatter.add_scatter(x=[lo, hi], y=[lo, hi], mode="lines", name="Perfect prediction")
+
+    left, right = st.columns(2)
+    show(scatter, left)
+    errors = (test["Predicted"] - test["Energy"]).rename("Error")
+    show(px.histogram(errors, nbins=60, title="Prediction error distribution").update_layout(showlegend=False), right)
+
+
 # App
 PAGES = {
     "Overview": overview_page,
