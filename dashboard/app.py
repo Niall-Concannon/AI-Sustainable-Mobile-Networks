@@ -246,12 +246,27 @@ def saving_page(df):
                        "saving_candidates.csv", "text/csv")
 
 
+def explorer_page(df):
+    st.title("Base Station Explorer")
+    station = st.selectbox("Base station", sorted_stations(df["BS"]))
+    one = df[df["BS"] == station]
+    kpis({"Avg energy": f"{one['Energy'].mean():.1f}", "Avg load": f"{one['load'].mean():.2f}",
+          "TX power": f"{one['TXpower'].mean():.2f}", "Readings with ES mode": f"{(one['ESMODE'] > 0).sum():,}"})
+    show(energy_load_chart(one.rename(columns={"load": "Load"}), f"{station}: energy and load"))
+
+    ranking = df.groupby("BS")["Energy"].mean().sort_values(ascending=False)
+    left, right = st.columns(2)
+    show(px.bar(ranking.head(15), title="15 highest-energy base stations", labels={"value": "Avg energy", "BS": ""}), left)
+    show(px.bar(ranking.tail(15), title="15 lowest-energy base stations", labels={"value": "Avg energy", "BS": ""}), right)
+
+
 # App
 PAGES = {
     "Overview": overview_page,
     "Energy patterns": patterns_page,
     "Predictions": predictions_page,
     "Saving opportunities": saving_page,
+    "Base station explorer": explorer_page,
 }
 
 
